@@ -72,7 +72,8 @@ def sliding_chunks_matmul_qk(q: torch.Tensor, k: torch.Tensor, w: int, padding_v
 
     # copy parts from diagonal_chunk_attn into the compined matrix of attentions
     # - copying the main diagonal and the upper triangle
-    diagonal_attn[:, :-1, :, w:] = diagonal_chunk_attn[:, :, :w, :w + 1]
+    # skipping upper triangle
+    # diagonal_attn[:, :-1, :, w:] = diagonal_chunk_attn[:, :, :w, :w + 1]
     diagonal_attn[:, -1, :, w:] = diagonal_chunk_attn[:, -1, w:, :w + 1]
     # - copying the lower triangle
     diagonal_attn[:, 1:, :, :w] = diagonal_chunk_attn[:, :, - (w + 1):-1, w + 1:]
@@ -111,6 +112,8 @@ def sliding_chunks_matmul_pv(prob: torch.Tensor, v: torch.Tensor, w: int):
     skewed_prob = _skew2(chunk_prob, padding_value=0)
 
     context = torch.einsum('bcwd,bcdh->bcwh', (skewed_prob, chunk_v))
+    # setting upper triangle to 0, aligning with sliding_chunks_matmul_qk
+    context[:, :-1, :, w:] = 0
     return context.view(bsz, num_heads, seqlen, head_dim).transpose(1, 2)
 
 
@@ -155,7 +158,8 @@ def sliding_chunks_no_overlap_matmul_qk(q: torch.Tensor, k: torch.Tensor, w: int
     chunk_q = q.view(bsz, seqlen // w, w, num_heads, head_dim)
     chunk_k = k.view(bsz, seqlen // w, w, num_heads, head_dim)
     chunk_k_expanded = torch.stack((
-        F.pad(chunk_k[:, :-1], (0, 0, 0, 0, 0, 0, 1, 0), value=0.0),
+        # skipping upper triangle
+        # F.pad(chunk_k[:, :-1], (0, 0, 0, 0, 0, 0, 1, 0), value=0.0),
         chunk_k,
         F.pad(chunk_k[:, 1:], (0, 0, 0, 0, 0, 0, 0, 1), value=0.0),
     ), dim=-1)
@@ -168,7 +172,8 @@ def sliding_chunks_no_overlap_matmul_pv(prob: torch.Tensor, v: torch.Tensor, w: 
     chunk_prob = prob.view(bsz, seqlen // w, w, num_heads, 3, w)
     chunk_v = v.view(bsz, seqlen // w, w, num_heads, head_dim)
     chunk_v_extended = torch.stack((
-        F.pad(chunk_v[:, :-1], (0, 0, 0, 0, 0, 0, 1, 0), value=0.0),
+        # skipping upper triangle to align with sliding_chunks_no_overlap_matmul_qk
+        # F.pad(chunk_v[:, :-1], (0, 0, 0, 0, 0, 0, 1, 0), value=0.0),
         chunk_v,
         F.pad(chunk_v[:, 1:], (0, 0, 0, 0, 0, 0, 0, 1), value=0.0),
     ), dim=-1)
